@@ -1,9 +1,4 @@
-// Copyright (c) 2013 The Go Authors. All rights reserved.
-// Copyright (c) 2013 memfs Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Package memfs creates a watched in memory filesystem.
+// 在代码开头添加新的导入语句
 package memfs
 
 import (
@@ -17,7 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/howeyc/fsnotify"
+	"github.com/fsnotify/fsnotify"
 )
 
 var (
@@ -106,7 +101,7 @@ func (fs *memFileSystem) walk() error {
 			return fmt.Errorf("failed to walk: %s with err: %v", fs.root, err)
 		}
 		if fi.IsDir() {
-			err = fs.watcher.Watch(path)
+			err = fs.watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to add watch: %s err: %v", path, err)
 			}
@@ -147,31 +142,38 @@ func (fs *memFileSystem) deleteFile(name string) os.FileInfo {
 func (fs *memFileSystem) watcherCallback() {
 	for {
 		select {
-		case e := <-fs.watcher.Event:
-			if e.IsCreate() {
-				fi := fs.reloadFile(e.Name)
+		case event, ok := <-fs.watcher.Events:
+			if !ok {
+				return
+			}
+
+			if event.Op&fsnotify.Create == fsnotify.Create {
+				fi := fs.reloadFile(event.Name)
 				if fi != nil && fi.IsDir() {
-					err := fs.watcher.Watch(e.Name)
+					err := fs.watcher.Add(event.Name)
 					if err != nil {
-						logger.Printf("failed to add watch: %s err: %v", e.Name, err)
+						logger.Printf("failed to add watch: %s err: %v", event.Name, err)
 					}
 				}
-				fs.reloadFile(path.Dir(e.Name))
+				fs.reloadFile(path.Dir(event.Name))
 			}
-			if e.IsModify() {
-				fs.reloadFile(e.Name)
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				fs.reloadFile(event.Name)
 			}
-			if e.IsDelete() || e.IsRename() {
-				fi := fs.deleteFile(e.Name)
+			if event.Op&fsnotify.Remove == fsnotify.Remove || event.Op&fsnotify.Rename == fsnotify.Rename {
+				fi := fs.deleteFile(event.Name)
 				if fi != nil && fi.IsDir() {
-					err := fs.watcher.RemoveWatch(e.Name)
+					err := fs.watcher.Remove(event.Name)
 					if err != nil {
-						logger.Printf("failed to remove watch: %s err: %v", e.Name, err)
+						logger.Printf("failed to remove watch: %s err: %v", event.Name, err)
 					}
 				}
-				fs.reloadFile(path.Dir(e.Name))
+				fs.reloadFile(path.Dir(event.Name))
 			}
-		case err := <-fs.watcher.Error:
+		case err, ok := <-fs.watcher.Errors:
+			if !ok {
+				return
+			}
 			logger.Printf("watcher error: %v", err)
 		}
 	}
