@@ -10,7 +10,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ranveerkunal/memfs"
+	"github.com/QQ2017/memfs-new"
 )
 
 func main() {
